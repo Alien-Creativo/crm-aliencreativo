@@ -6,6 +6,7 @@ Base release: `v4.19.1`. Record each changed upstream path here before merging i
 |---|---|---|---|
 | `.gitignore` | Exclude local credentials, backups, dumps and index data | 2026-11-03 | Keep these exclusions and merge new upstream rules |
 | `.github/workflows/*` | Remove publishing and maintenance jobs intended for the upstream project | 2026-11-03 | Remove reintroduced upstream workflows; preserve our own CI |
+| `config/initializers/01_inject_enterprise_edition_module.rb` | `const_get_maybe_false` returns false when the extension namespace is missing; needed because `custom/` makes `extensions` list `enterprise` on the CE image | 2026-11-03 | Keep the `return false unless mod` guard |
 | `config/application.rb` | Load `custom/` (eager-load paths, views after enterprise, initializers) to mirror `enterprise/` | 2026-11-03 | Re-add the 10-line block marked `Alien custom extension` after the enterprise initializers block |
 
 Files added for this fork: `UPSTREAM_VERSION`, `PATCHES.md`, `README.alien.md`, `custom/`, `spec/custom/`.
