@@ -1,0 +1,39 @@
+name: deploy-staging
+
+on:
+  workflow_run:
+    workflows: [build]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    env:
+      COOLIFY_URL: ${{ secrets.COOLIFY_URL }}
+      COOLIFY_DEPLOY_TOKEN: ${{ secrets.COOLIFY_DEPLOY_TOKEN }}
+      STAGING_UUID: ${{ secrets.COOLIFY_STAGING_UUID }}
+    steps:
+      - name: Redeploy staging if it is running
+        run: |
+          if [ -z "$COOLIFY_URL" ] || [ -z "$COOLIFY_DEPLOY_TOKEN" ] || [ -z "$STAGING_UUID" ]; then
+            echo "Coolify secrets not configured; nothing deployed." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          status=$(curl -sS -H "Authorization: Bearer $COOLIFY_DEPLOY_TOKEN" \
+            "$COOLIFY_URL/api/v1/services/$STAGING_UUID" | jq -r '.status // empty')
+          case "$status" in
+            running*) ;;
+            *)
+              echo "Staging is not running (status: ${status:-unknown}); skipped (on-demand staging)." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+              ;;
+          esac
+          curl -sSf -H "Authorization: Bearer $COOLIFY_DEPLOY_TOKEN" \
+            "$COOLIFY_URL/api/v1/deploy?uuid=$STAGING_UUID&force=false" > /dev/null
+          echo "Staging redeploy requested." >> "$GITHUB_STEP_SUMMARY"
