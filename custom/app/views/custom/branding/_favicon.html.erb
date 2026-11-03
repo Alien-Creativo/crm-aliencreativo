@@ -1,0 +1,9 @@
+<%# Alien: replaces the three static favicon links of layouts/vueapp. %>
+<% favicon_url = GlobalConfig.get_value('ALIEN_FAVICON_URL').presence %>
+<% if favicon_url %>
+  <link rel="icon" href="<%= favicon_url %>">
+<% else %>
+  <link class="favicon" rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link class="favicon" rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96.png">
+  <link class="favicon" rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+<% end %>
