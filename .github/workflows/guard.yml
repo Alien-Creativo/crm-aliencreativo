@@ -1,0 +1,64 @@
+name: guard
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    name: guard
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Block forbidden files
+        run: |
+          bad=$(git ls-files | grep -E '(^|/)backups/|\.(dump|sql|tar\.gz)$|(^|/)\.env(\..*)?$' \
+            | grep -vE '(^|/)\.env\.example$|^\.circleci/setup_chatwoot\.sql$' || true)
+          if [ -n "$bad" ]; then
+            echo "::error::Forbidden files tracked:"
+            echo "$bad"
+            exit 1
+          fi
+
+      - name: Block forbidden strings
+        env:
+          # Optional secret: newline-separated literals (VPS IP, internal hosts). Never commit them.
+          FORBIDDEN: ${{ secrets.GUARD_FORBIDDEN_STRINGS }}
+        run: |
+          if [ -z "$FORBIDDEN" ]; then
+            echo "GUARD_FORBIDDEN_STRINGS not set; string check skipped." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          printf '%s\n' "$FORBIDDEN" > "$RUNNER_TEMP/forbidden.txt"
+          if git grep -nIF -f "$RUNNER_TEMP/forbidden.txt" -- . >/dev/null; then
+            echo "::error::A forbidden string appears in the tree (details withheld)"
+            exit 1
+          fi
+
+      - name: Gitleaks
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+          curl -sSfL -o gl.tgz "$base/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL -o gl.sum "$base/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+          grep " gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz\$" gl.sum | sed 's/ .*/  gl.tgz/' | sha256sum -c -
+          tar -xzf gl.tgz gitleaks
+          if [ "$EVENT" = "pull_request" ]; then
+            range="$PR_BASE..$PR_HEAD"
+          else
+            range="${GITHUB_SHA}~1..${GITHUB_SHA}"
+          fi
+          ./gitleaks git --redact --no-banner --log-opts="$range" .

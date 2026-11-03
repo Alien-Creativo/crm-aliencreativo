@@ -1,0 +1,83 @@
+name: test
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-24.04
+    env:
+      RAILS_ENV: test
+      NODE_OPTIONS: --openssl-legacy-provider
+    services:
+      postgres:
+        image: pgvector/pgvector:pg12
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ''
+          POSTGRES_DB: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --mount type=tmpfs,destination=/var/lib/postgresql/data
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:alpine
+        ports:
+          - 6379:6379
+        options: --entrypoint redis-server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm i
+
+      - name: Strip enterprise code (CE edition)
+        run: rm -rf enterprise spec/enterprise
+
+      - name: Rubocop (custom/ and files listed in PATCHES.md)
+        run: |
+          targets=""
+          for f in $(grep -oE '`[^`]+\.rb`' PATCHES.md | tr -d '`' | sort -u); do
+            [ -f "$f" ] && targets="$targets $f"
+          done
+          [ -d custom ] && targets="$targets custom"
+          if [ -n "$targets" ]; then
+            bundle exec rubocop $targets
+          else
+            echo "Nothing to lint yet." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Prepare database
+        run: |
+          bundle exec rake db:create
+          bundle exec rake db:schema:load
+
+      - name: Rspec
+        run: |
+          paths="spec/services/whatsapp spec/controllers/super_admin"
+          [ -d spec/custom ] && paths="spec/custom $paths"
+          bundle exec rspec --format progress $paths
+
+      - name: Upload rails log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rails-log
+          path: log

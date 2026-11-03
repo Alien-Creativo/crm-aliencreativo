@@ -1,0 +1,85 @@
+name: upstream-check
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    env:
+      # UPSTREAM_SYNC_TOKEN (optional PAT with repo + workflow) is needed because
+      # GITHUB_TOKEN cannot push commits that touch .github/workflows.
+      GH_TOKEN: ${{ secrets.UPSTREAM_SYNC_TOKEN || github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.UPSTREAM_SYNC_TOKEN || github.token }}
+
+      - name: Detect new upstream release
+        id: detect
+        run: |
+          latest=$(gh api repos/chatwoot/chatwoot/releases/latest --jq .tag_name)
+          current=$(tr -d '[:space:]' < UPSTREAM_VERSION)
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          newest=$(printf '%s\n%s\n' "$current" "$latest" | sort -V | tail -1)
+          if [ "$latest" = "$current" ] || [ "$newest" = "$current" ]; then
+            echo "Up to date ($current)." >> "$GITHUB_STEP_SUMMARY"
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          elif git ls-remote --exit-code --heads origin "update/$latest" > /dev/null 2>&1; then
+            echo "Branch update/$latest already exists." >> "$GITHUB_STEP_SUMMARY"
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Merge upstream tag and open PR
+        if: steps.detect.outputs.new == 'true'
+        env:
+          TAG: ${{ steps.detect.outputs.latest }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/chatwoot/chatwoot.git
+          git fetch upstream "refs/tags/$TAG:refs/tags/$TAG"
+          git checkout -b "update/$TAG"
+
+          conflicts=""
+          if ! git merge --no-ff --no-commit "$TAG"; then
+            for f in $(git diff --name-only --diff-filter=U); do
+              case "$f" in
+                .github/workflows/*) git rm -q -f -- "$f" ;;
+                *) conflicts="$conflicts $f" ;;
+              esac
+            done
+          fi
+
+          if [ -n "$conflicts" ]; then
+            git merge --abort || true
+            list=$(for c in $conflicts; do echo "- \`$c\`"; done)
+            gh issue create --title "Upstream $TAG: merge conflicts" \
+              --body "Merging \`$TAG\` conflicts in:"$'\n\n'"$list"$'\n\n'"Resolve locally with PATCHES.md in hand."
+            exit 0
+          fi
+
+          # Only our own workflows stay in this fork.
+          keep=" guard.yml test.yml build.yml deploy-staging.yml upstream-check.yml "
+          for f in .github/workflows/*; do
+            [ -e "$f" ] || continue
+            case "$keep" in *" $(basename "$f") "*) ;; *) git rm -q -f -- "$f" ;; esac
+          done
+
+          echo "$TAG" > UPSTREAM_VERSION
+          git add -A
+          git commit -q -m "chore: merge upstream $TAG"
+          git push origin "update/$TAG"
+          gh pr create --base main --head "update/$TAG" \
+            --title "chore: update to upstream $TAG" \
+            --body "Automated merge of upstream \`$TAG\`. Review PATCHES.md, read the release notes of every intermediate version, then validate in staging."
