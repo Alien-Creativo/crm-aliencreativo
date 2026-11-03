@@ -10,3 +10,5 @@ Base release: `v4.19.1`. Record each changed upstream path here before merging i
 | `config/application.rb` | Load `custom/` (eager-load paths, views after enterprise, initializers) to mirror `enterprise/` | 2026-11-03 | Re-add the 10-line block marked `Alien custom extension` after the enterprise initializers block |
 
 Files added for this fork: `UPSTREAM_VERSION`, `PATCHES.md`, `README.alien.md`, `custom/`, `spec/custom/`.
+
+No upstream file was edited for the Colombia phone normalizer. It adds `custom/app/services/whatsapp/phone_normalizers/colombia_phone_normalizer.rb` and `custom/config/initializers/colombia_phone_normalizer.rb`, which replaces `Whatsapp::PhoneNumberNormalizationService::NORMALIZERS` (read as a constant by `Whatsapp::WebhookChannelFinderService`). On an update, re-check that both still consume `NORMALIZERS` the same way.
