@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       # UPSTREAM_SYNC_TOKEN (optional PAT with repo + workflow) is needed because
       # GITHUB_TOKEN cannot push commits that touch .github/workflows.
