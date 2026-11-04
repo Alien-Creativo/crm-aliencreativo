@@ -1,0 +1,47 @@
+<% content_for(:title) { t("super_admin.settings.configure_title", config: 'Branding') } %>
+<% settings_page = settings_pages.map(&:last).find { |attrs| attrs['config_key'] == @config } || {} %>
+<% file_keys = Custom::Branding::AssetUploader::FILE_KEYS %>
+
+<%= render "section",
+           title: settings_page['name'] || 'Branding',
+           description: settings_page['description'],
+           icon: settings_page['icon'] || 'i-lucide-palette' do %>
+  <%= form_with url: super_admin_app_config_url(config: @config), method: :post, multipart: true do |form| %>
+    <div class="rounded-xl border border-n-weak bg-n-solid-1 divide-y divide-n-weak">
+      <% @allowed_configs.each do |key| %>
+        <% config = @installation_configs[key] || {} %>
+        <% field_id = "app_config_#{key}" %>
+        <div class="grid gap-x-8 gap-y-1.5 px-5 py-4 sm:grid-cols-2">
+          <div class="text-label text-n-slate-12">
+            <%= form.label "app_config[#{key}]", config['display_title'] || key, for: field_id %>
+            <% if config['description'].present? %>
+              <p class="mt-0.5 max-w-xl text-label-small text-n-slate-11"><%= config['description'] %></p>
+            <% end %>
+          </div>
+          <div class="min-w-0 space-y-2">
+            <% if config['type'] == 'boolean' %>
+              <%= form.select "app_config[#{key}]",
+                              [["True", true], ["False", false]],
+                              { selected: ActiveModel::Type::Boolean.new.cast(@app_config[key]) },
+                              id: field_id, class: ui(:select) %>
+            <% else %>
+              <% if file_keys.include?(key) && @app_config[key].present? %>
+                <img src="<%= @app_config[key] %>" alt="<%= key %>" class="h-12 max-w-full rounded border border-n-weak bg-n-alpha-1 object-contain p-1">
+              <% end %>
+              <%= form.text_field "app_config[#{key}]", value: @app_config[key], id: field_id, class: ui(:input) %>
+              <% if file_keys.include?(key) %>
+                <%= file_field_tag "branding_files[#{key}]", id: "branding_files_#{key}", accept: 'image/png,image/x-icon,.png,.ico',
+                                   class: ui(:input) %>
+                <p class="text-label-small text-n-slate-11">Or upload a PNG or ICO file (max 1 MB). The upload replaces the URL.</p>
+              <% end %>
+            <% end %>
+          </div>
+        </div>
+      <% end %>
+
+      <div class="sticky bottom-0 z-10 flex items-center gap-2 rounded-b-xl bg-n-solid-1 px-5 py-3" data-form-actions>
+        <%= render "button", label: t("super_admin.actions.save_changes"), submit: form %>
+      </div>
+    </div>
+  <% end %>
+<% end %>
